@@ -4,136 +4,133 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 
-[CustomEditor (typeof(DefaultAsset))]
+[CustomEditor(typeof(SceneAsset))]
 public class SceneInspector : Editor
 {
-	bool isSceneInspector = false;
+    GameObject scenePrefab;
 
-	GameObject scenePrefab;
+    Dictionary<Editor, bool> activeEditors = new Dictionary<Editor, bool>();
 
-	Dictionary<Editor,bool> activeEditors = new Dictionary<Editor, bool> ();
+    void OnEnable()
+    {
+        var assetPath = AssetDatabase.GetAssetPath(target);
 
-	void OnEnable ()
-	{
-		var assetPath = AssetDatabase.GetAssetPath (target);
+        scenePrefab = ScenePrefabUtility.GetScenePrefab(assetPath);
 
-		isSceneInspector = Path.GetExtension (assetPath) == ".unity";
+        if (scenePrefab == null)
+            scenePrefab = ScenePrefabUtility.CreateScenePrefab(assetPath);
 
-		if (isSceneInspector == false)
-			return;
+        InitActiveEditors();
+        Undo.undoRedoPerformed += InitActiveEditors;
+    }
+    
+    void OnDisable()
+    {
+        ClearActiveEditors();
+        Undo.undoRedoPerformed -= InitActiveEditors;
+    }
 
+    void ClearActiveEditors()
+    {
+        foreach (var activeEditor in activeEditors)
+        {
+            DestroyImmediate(activeEditor.Key);
+        }
+        activeEditors.Clear();
+    }
 
-		scenePrefab = ScenePrefabUtility.GetScenePrefab (assetPath);
+    void InitActiveEditors()
+    {
+        ClearActiveEditors();
 
-		if (scenePrefab == null)
-			scenePrefab = ScenePrefabUtility.CreateScenePrefab (assetPath);
+        foreach (var component in scenePrefab.GetComponents<Component>())
+        {
+            if (component is Transform || component is RectTransform)
+                continue;
+            activeEditors.Add(Editor.CreateEditor(component), true);
+        }
 
-		InitActiveEditors ();
-		Undo.undoRedoPerformed += InitActiveEditors;
-	}
-
-	void OnDisable ()
-	{
-		ClearActiveEditors ();
-		Undo.undoRedoPerformed -= InitActiveEditors;
-	}
-
-	void ClearActiveEditors ()
-	{
-		foreach (var activeEditor in activeEditors) {
-			Object.DestroyImmediate (activeEditor.Key);
-		}
-		activeEditors.Clear ();
-	}
-
-	void InitActiveEditors ()
-	{
-		ClearActiveEditors ();
-
-		foreach (var component in scenePrefab.GetComponents<Component> ()) {
-			if (component is Transform || component is RectTransform)
-				continue;
-			activeEditors.Add (Editor.CreateEditor (component), true);
-		}
-	
-	}
-		
-
-	public override void OnInspectorGUI ()
-	{
-		if (isSceneInspector == false)
-			return;
-		GUI.enabled = true;
-
-		var editors = new List<Editor> (activeEditors.Keys);
-
-		foreach (var editor in editors) {
-
-			DrawInspectorTitlebar (editor);
-
-			GUILayout.Space (-5f);
-
-			if (activeEditors [editor] && editor.target != null)
-				editor.OnInspectorGUI ();
-
-			DrawLine ();
-		}
+    }
 
 
-		if (editors.All (e => e.target != null) == false) {
-			InitActiveEditors ();
-			Repaint ();
-		}
+    public override void OnInspectorGUI()
+    {
+        GUI.enabled = true;
+
+        var editors = new List<Editor>(activeEditors.Keys);
+
+        foreach (var editor in editors)
+        {
+
+            DrawInspectorTitlebar(editor);
+
+            GUILayout.Space(-5f);
+
+            if (activeEditors[editor] && editor.target != null)
+                editor.OnInspectorGUI();
+
+            DrawLine();
+        }
 
 
-		Rect dragAndDropRect = GUILayoutUtility.GetRect (GUIContent.none, GUIStyle.none, GUILayout.ExpandHeight (true), GUILayout.MinHeight (200));
-
-		switch (Event.current.type) {
-		case EventType.DragUpdated:
-		case EventType.DragPerform:
-
-			if (dragAndDropRect.Contains (Event.current.mousePosition) == false)
-				break;
+        if (editors.All(e => e.target != null) == false)
+        {
+            InitActiveEditors();
+            Repaint();
+        }
 
 
-			DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+        Rect dragAndDropRect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.ExpandHeight(true), GUILayout.MinHeight(200));
 
-			if (Event.current.type == EventType.DragPerform) {
-				DragAndDrop.AcceptDrag ();
+        switch (Event.current.type)
+        {
+            case EventType.DragUpdated:
+            case EventType.DragPerform:
 
-				var components = DragAndDrop.objectReferences
-					.Where (x => x.GetType () == typeof(MonoScript))
-					.OfType<MonoScript> ()
-					.Select (m => m.GetClass ());
-
-				foreach (var component in components) {
-					Undo.AddComponent (scenePrefab, component);
-				}
-				InitActiveEditors ();
-			}
-			break;
-		}
+                if (dragAndDropRect.Contains(Event.current.mousePosition) == false)
+                    break;
 
 
-		GUI.Label (dragAndDropRect, "");
-	}
+                DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
 
-	void DrawInspectorTitlebar (Editor editor)
-	{
-		var rect = GUILayoutUtility.GetRect (GUIContent.none, GUIStyle.none, GUILayout.Height (20));
-		rect.x = 0;
-		rect.y -= 5;
-		rect.width += 20;
-		activeEditors [editor] = EditorGUI.InspectorTitlebar (rect, activeEditors [editor], new Object[]{ editor.target });
-	}
+                if (Event.current.type == EventType.DragPerform)
+                {
+                    DragAndDrop.AcceptDrag();
 
-	void DrawLine ()
-	{
-		EditorGUILayout.Space ();
-		var lineRect = GUILayoutUtility.GetRect (GUIContent.none, GUIStyle.none, GUILayout.Height (2));
-		lineRect.y -= 3;
-		lineRect.width += 20;
-		Handles.color = Color.black;
-		Handles.DrawLine (new Vector2 (0, lineRect.y), new Vector2 (lineRect.width, lineRect.y));
-	}
+                    var components = DragAndDrop.objectReferences
+                        .Where(x => x.GetType() == typeof(MonoScript))
+                        .OfType<MonoScript>()
+                        .Select(m => m.GetClass());
+
+                    foreach (var component in components)
+                    {
+                        Undo.AddComponent(scenePrefab, component);
+                    }
+                    InitActiveEditors();
+                }
+                break;
+        }
+
+
+        GUI.Label(dragAndDropRect, "");
+    }
+
+    void DrawInspectorTitlebar(Editor editor)
+    {
+        var rect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(20));
+        rect.x = 0;
+        rect.y -= 5;
+        rect.width += 20;
+        activeEditors[editor] = EditorGUI.InspectorTitlebar(rect, activeEditors[editor], new Object[] { editor.target }, true);
+    }
+
+    void DrawLine()
+    {
+        EditorGUILayout.Space();
+        var lineRect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(2));
+        lineRect.y -= 3;
+        lineRect.width += 20;
+        Handles.color = Color.black;
+        Handles.DrawLine(new Vector2(0, lineRect.y), new Vector2(lineRect.width, lineRect.y));
+    }
 }
